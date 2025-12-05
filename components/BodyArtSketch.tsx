@@ -9,6 +9,88 @@ const updateSpring = (spring: Spring) => {
   spring.val += spring.vel;
 };
 
+// Star Class for rhythm effect
+class Star {
+  x: number;
+  y: number;
+  rotation: number;
+  birthTime: number;
+  lifeSpan: number; // 5000 ms
+  baseSize: number;
+  p: any;
+
+  constructor(p: any) {
+    this.p = p;
+    this.x = p.random(p.width);
+    this.y = p.random(p.height);
+    this.rotation = p.random(p.TWO_PI);
+    this.birthTime = p.millis();
+    this.lifeSpan = 5000;
+    this.baseSize = p.random(60, 120);
+  }
+
+  isDead(): boolean {
+    return this.p.millis() - this.birthTime > this.lifeSpan;
+  }
+
+  draw() {
+    const age = this.p.millis() - this.birthTime;
+    
+    // Calculate scale: 
+    // Rotate full size, then shrink in the last 1 second (1000ms)
+    let currentScale = 1;
+    const fadeOutDuration = 1000;
+    
+    if (age > this.lifeSpan - fadeOutDuration) {
+       currentScale = this.p.map(age, this.lifeSpan - fadeOutDuration, this.lifeSpan, 1, 0);
+    }
+    
+    // Constant rotation
+    this.rotation += 0.03;
+
+    this.p.push();
+    this.p.translate(this.x, this.y);
+    this.p.rotate(this.rotation);
+    this.p.scale(currentScale);
+
+    // Draw nested stars (White -> Black -> White -> Black)
+    // 1. Outer White
+    this.p.fill(255);
+    this.p.noStroke();
+    this.drawStarShape(0, 0, this.baseSize, this.baseSize * 0.5, 5);
+
+    // 2. Middle Black
+    this.p.fill(0);
+    this.drawStarShape(0, 0, this.baseSize * 0.7, (this.baseSize * 0.5) * 0.7, 5);
+
+    // 3. Inner White
+    this.p.fill(255);
+    this.drawStarShape(0, 0, this.baseSize * 0.45, (this.baseSize * 0.5) * 0.45, 5);
+
+    // 4. Center Black
+    this.p.fill(0);
+    this.drawStarShape(0, 0, this.baseSize * 0.25, (this.baseSize * 0.5) * 0.25, 5);
+    
+    this.p.pop();
+  }
+
+  drawStarShape(x: number, y: number, radius1: number, radius2: number, npoints: number) {
+    let angle = this.p.TWO_PI / npoints;
+    let halfAngle = angle / 2.0;
+    this.p.beginShape();
+    // Start at -PI/2 to point upwards
+    for (let a = -this.p.PI/2; a < this.p.TWO_PI - this.p.PI/2; a += angle) {
+      let sx = x + this.p.cos(a) * radius1;
+      let sy = y + this.p.sin(a) * radius1;
+      this.p.vertex(sx, sy);
+      sx = x + this.p.cos(a + halfAngle) * radius2;
+      sy = y + this.p.sin(a + halfAngle) * radius2;
+      this.p.vertex(sx, sy);
+    }
+    this.p.endShape(this.p.CLOSE);
+  }
+}
+
 const BodyArtSketch: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(document.createElement('video'));
@@ -35,7 +117,11 @@ const BodyArtSketch: React.FC = () => {
       let buffer: any; // Graphic buffer for the segmentation mask
       let videoImg: any; // P5 image to hold video frame
       let mic: any;
+      let fft: any;
+      let peakDetect: any;
       let smoothedVol = 0; // Smooth the volume for animation
+      let stars: Star[] = [];
+      let lastBeatTime = 0;
 
       p.setup = () => {
         const container = containerRef.current;
@@ -56,9 +142,15 @@ const BodyArtSketch: React.FC = () => {
 
         // Initialize Audio Input safely
         try {
-          if (p.AudioIn) {
+          if (p.AudioIn && p.FFT && p.PeakDetect) {
             mic = new p.AudioIn();
             mic.start();
+            
+            fft = new p.FFT();
+            fft.setInput(mic);
+            
+            // Detect beats in low frequencies (20Hz - 200Hz) - standard for drums/bass
+            peakDetect = new p.PeakDetect(20, 200, 0.15, 20);
           } else {
             console.warn("p5.sound not loaded or AudioIn unavailable");
           }
@@ -95,10 +187,24 @@ const BodyArtSketch: React.FC = () => {
         // Analyze Gesture from latest landmarks
         analyzeGesture();
         
+        // Audio Analysis
         let vol = 0;
         try {
           if (mic && mic.getLevel) {
               vol = mic.getLevel();
+          }
+          if (fft && peakDetect) {
+             fft.analyze();
+             peakDetect.update(fft);
+             
+             // Check for beat
+             if (peakDetect.isDetected) {
+                // Debounce to prevent too many stars at once (limit to ~5 per second max)
+                if (p.millis() - lastBeatTime > 200) {
+                    stars.push(new Star(p));
+                    lastBeatTime = p.millis();
+                }
+             }
           }
         } catch (e) {
           // Ignore audio errors during draw to prevent crash
@@ -121,6 +227,11 @@ const BodyArtSketch: React.FC = () => {
             p.rect(0, 0, 50, 50);
             p.pop();
         }
+
+        // Draw Stars (Overlay)
+        // Filter out dead stars first
+        stars = stars.filter(star => !star.isDead());
+        stars.forEach(star => star.draw());
       };
 
       const analyzeGesture = () => {
