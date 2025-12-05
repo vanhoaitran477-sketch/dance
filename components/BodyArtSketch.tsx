@@ -301,6 +301,11 @@ const BodyArtSketch: React.FC = () => {
           return;
         }
         
+        // Start Mirror Transform for the Visual Output
+        p.push();
+        p.translate(p.width, 0);
+        p.scale(-1, 1);
+
         const layers = 6;
         const currentXSpread = spreadXSpring.current.val;
         const currentYSpread = spreadYSpring.current.val;
@@ -381,6 +386,9 @@ const BodyArtSketch: React.FC = () => {
              p.imageMode(p.CORNER); 
              p.image(vidImg, 0, 0, p.width, p.height);
         }
+        p.pop();
+
+        // End Mirror Transform
         p.pop();
       };
     };
