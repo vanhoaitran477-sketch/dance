@@ -1,0 +1,8 @@
+{
+  "name": "Body Art Echo",
+  "description": "An interactive p5.js and MediaPipe art installation that creates elastic echoes of your body silhouette based on your gestures.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
